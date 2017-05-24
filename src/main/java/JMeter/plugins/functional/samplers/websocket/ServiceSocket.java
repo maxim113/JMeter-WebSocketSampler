@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.log.Logger;
 
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.jmeter.engine.util.CompoundVariable;
@@ -49,6 +50,7 @@ public class ServiceSocket {
     protected Pattern responseExpression;
     protected Pattern disconnectExpression;
     protected boolean connected = false;
+    private static final Pattern statusPattern = Pattern.compile("status\":([0-9]+)");
 
     public ServiceSocket(WebSocketSampler parent, WebSocketClient client) {
         this.parent = parent;
@@ -59,16 +61,27 @@ public class ServiceSocket {
         disconnectPattern = new CompoundVariable(parent.getCloseConncectionPattern()).execute();
         logMessage.append("\n\n[Execution Flow]\n");
         logMessage.append(" - Opening new connection\n");
+
+        if(log.isDebugEnabled()) {
+            log.debug("Opening new connection. Response pattern: " + parent.getResponsePattern() + ". Close pattern: " + parent.getCloseConncectionPattern());
+        }
         initializePatterns();
     }
+
 
     @OnWebSocketMessage
     public void onMessage(String msg) {
         synchronized (parent) {
+            //fix for message recieved in frame
+            if(closeLatch.getCount() == 0) {
+                return;
+            }
             log.debug("Received message: " + msg);
             String length = " (" + msg.length() + " bytes)";
             logMessage.append(" - Received message #").append(messageCounter).append(length);
             addResponseMessage("[Message " + (messageCounter++) + "]\n" + msg + "\n\n");
+
+            setStatus(msg);
 
             if (responseExpression == null || responseExpression.matcher(msg).find()) {
                 logMessage.append("; matched response pattern").append("\n");
@@ -95,6 +108,8 @@ public class ServiceSocket {
 			addResponseMessage("[Frame " + (messageCounter++) + "]\n"
 					+ frameTxt + "\n\n");
 
+            setStatus(frameTxt);
+
 			if (responseExpression == null
 					|| responseExpression.matcher(frameTxt).find()) {
 				logMessage.append("; matched response pattern").append("\n");
@@ -111,6 +126,20 @@ public class ServiceSocket {
 		}
 	}
 
+    private void setStatus(String frameTxt) {
+        Matcher statusMatcher = statusPattern.matcher(frameTxt);
+        try {
+            if(statusMatcher.find()) {
+                Integer status = Integer.valueOf(statusMatcher.group(1));
+                if(status != 200) {
+                    error = status;
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error parse status", e);
+        }
+    }
+
     @OnWebSocketConnect
     public void onOpen(Session session) {
         logMessage.append(" - WebSocket conection has been opened").append("\n");
@@ -125,7 +154,7 @@ public class ServiceSocket {
         if (statusCode != 1000) {
             log.error("Disconnect " + statusCode + ": " + reason);
             logMessage.append(" - WebSocket conection closed unexpectedly by the server: [").append(statusCode).append("] ").append(reason).append("\n");
-            error = statusCode;
+            error = error == 0 ? statusCode : error;
         } else {
             logMessage.append(" - WebSocket conection has been successfully closed by the server").append("\n");
             log.debug("Disconnect " + statusCode + ": " + reason);
@@ -153,8 +182,17 @@ public class ServiceSocket {
     }
 
     public boolean awaitClose(int duration, TimeUnit unit) throws InterruptedException {
+        if(log.isDebugEnabled()) {
+            log.debug("Await close");
+        }
+
         logMessage.append(" - Waiting for messages for ").append(duration).append(" ").append(unit.toString()).append("\n");
         boolean res = this.closeLatch.await(duration, unit);
+
+        if(log.isDebugEnabled()) {
+            log.debug("Await complete");
+        }
+
 
         if (!parent.isStreamingConnection()) {
             close(StatusCode.NORMAL, "JMeter closed session.");
@@ -236,7 +274,7 @@ public class ServiceSocket {
     protected void initializePatterns() {
         try {
             logMessage.append(" - Using response message pattern \"").append(responsePattern).append("\"\n");
-            responseExpression = (responsePattern != null || !responsePattern.isEmpty()) ? Pattern.compile(responsePattern) : null;
+            responseExpression = (responsePattern != null && !responsePattern.isEmpty()) ? Pattern.compile(responsePattern) : null;
         } catch (Exception ex) {
             logMessage.append(" - Invalid response message regular expression pattern: ").append(ex.getLocalizedMessage()).append("\n");
             log.error("Invalid response message regular expression pattern: " + ex.getLocalizedMessage());
@@ -245,7 +283,7 @@ public class ServiceSocket {
 
         try {
             logMessage.append(" - Using disconnect pattern \"").append(disconnectPattern).append("\"\n");
-            disconnectExpression = (disconnectPattern != null || !disconnectPattern.isEmpty()) ? Pattern.compile(disconnectPattern) : null;
+            disconnectExpression = (disconnectPattern != null && !disconnectPattern.isEmpty()) ? Pattern.compile(disconnectPattern) : null;
         } catch (Exception ex) {
             logMessage.append(" - Invalid disconnect regular expression pattern: ").append(ex.getLocalizedMessage()).append("\n");
             log.error("Invalid disconnect regular regular expression pattern: " + ex.getLocalizedMessage());

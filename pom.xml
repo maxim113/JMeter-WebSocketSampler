@@ -58,7 +58,7 @@
     <dependency>
       <groupId>org.eclipse.jetty.websocket</groupId>
       <artifactId>websocket-client</artifactId>
-      <version>9.1.1.v20140108</version>
+      <version>9.2.7.v20150116</version>
       <classifier>hybrid</classifier>
     </dependency>
     <dependency>
