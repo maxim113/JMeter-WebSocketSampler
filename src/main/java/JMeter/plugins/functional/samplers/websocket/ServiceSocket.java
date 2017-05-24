@@ -284,4 +284,8 @@ public class ServiceSocket {
         }
         responeBacklog.add(message);
     }
+
+    public void clearBacklog() {
+        responeBacklog.clear();
+    }
 }
