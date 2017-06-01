@@ -81,18 +81,8 @@ public class ServiceSocket {
             logMessage.append(" - Received message #").append(messageCounter).append(length);
             addResponseMessage("[Message " + (messageCounter++) + "]\n" + msg + "\n\n");
 
-            setStatus(msg);
 
-            if (responseExpression == null || responseExpression.matcher(msg).find()) {
-                logMessage.append("; matched response pattern").append("\n");
-                closeLatch.countDown();
-            } else if (!disconnectPattern.isEmpty() && disconnectExpression.matcher(msg).find()) {
-                logMessage.append("; matched connection close pattern").append("\n");
-                closeLatch.countDown();
-                close(StatusCode.NORMAL, "JMeter closed session.");
-            } else {
-                logMessage.append("; didn't match any pattern").append("\n");
-            }
+            parseResponse(msg);
         }
     }
     
@@ -108,23 +98,28 @@ public class ServiceSocket {
 			addResponseMessage("[Frame " + (messageCounter++) + "]\n"
 					+ frameTxt + "\n\n");
 
-            setStatus(frameTxt);
-
-			if (responseExpression == null
-					|| responseExpression.matcher(frameTxt).find()) {
-				logMessage.append("; matched response pattern").append("\n");
-				closeLatch.countDown();
-			} else if (!disconnectPattern.isEmpty()
-					&& disconnectExpression.matcher(frameTxt).find()) {
-				logMessage.append("; matched connection close pattern").append(
-						"\n");
-				closeLatch.countDown();
-				close(StatusCode.NORMAL, "JMeter closed session.");
-			} else {
-				logMessage.append("; didn't match any pattern").append("\n");
-			}
-		}
+            parseResponse(frameTxt);
+        }
 	}
+
+    private void parseResponse(String msg) {
+        setStatus(msg);
+        if (responseExpression == null
+                || responseExpression.matcher(msg).find()) {
+            logMessage.append("; matched response pattern").append("\n");
+            closeLatch.countDown();
+        } else if (!disconnectPattern.isEmpty()
+                && disconnectExpression.matcher(msg).find()) {
+            logMessage.append("; matched connection close pattern").append(
+                    "\n");
+            closeLatch.countDown();
+            if (!parent.isStreamingConnection()) {
+                close(StatusCode.NORMAL, "JMeter closed session.");
+            }
+        } else {
+            logMessage.append("; didn't match any pattern").append("\n");
+        }
+    }
 
     private void setStatus(String frameTxt) {
         Matcher statusMatcher = statusPattern.matcher(frameTxt);
@@ -244,10 +239,22 @@ public class ServiceSocket {
         //Stoping WebSocket client; thanks m0ro
         try {
             client.stop();
+//            client.destroy();
             logMessage.append(" - WebSocket client closed by the client").append("\n");
         } catch (Exception e) {
             logMessage.append(" - WebSocket client wasn't started (...that's odd)").append("\n");
         }
+
+//        client = null;
+
+
+//        try {
+//            client.getConnectionManager().stop();
+//        } catch (Exception e) {
+//            System.err.println("Task Error at 'stop': " + e.getLocalizedMessage());
+//        }
+//
+//        client.getConnectionManager().destroy();
     }
 
     /**
@@ -299,7 +306,7 @@ public class ServiceSocket {
         return connected;
     }
 
-    public void initialize() {
+    public void initialize() throws Exception {
         logMessage = new StringBuffer();
         logMessage.append("\n\n[Execution Flow]\n");
         logMessage.append(" - Reusing exising connection\n");

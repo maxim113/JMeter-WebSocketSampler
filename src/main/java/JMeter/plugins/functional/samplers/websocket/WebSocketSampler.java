@@ -81,7 +81,7 @@ public class WebSocketSampler extends AbstractSampler implements TestStateListen
         //Create WebSocket client
         SslContextFactory sslContexFactory = new SslContextFactory();
         sslContexFactory.setTrustAll(isIgnoreSslErrors());
-        WebSocketClient webSocketClient = new WebSocketClient(sslContexFactory, executor);
+        WebSocketClient webSocketClient = null;
 
         if (isStreamingConnection()) {
             if (connectionList.containsKey(connectionId)) {
@@ -89,10 +89,12 @@ public class WebSocketSampler extends AbstractSampler implements TestStateListen
                 socket.initialize();
                 return socket;
             } else {
+                webSocketClient = new WebSocketClient(sslContexFactory, executor);
                 socket = new ServiceSocket(this, webSocketClient);
                 connectionList.put(connectionId, socket);
             }
         } else {
+            webSocketClient = new WebSocketClient(sslContexFactory, executor);
             socket = new ServiceSocket(this, webSocketClient);
         }
 
@@ -486,7 +488,7 @@ public class WebSocketSampler extends AbstractSampler implements TestStateListen
     }
 
     public Boolean getClearBacklog() {
-        return getPropertyAsBoolean("clearBacklog", false);
+        return getPropertyAsBoolean("clearBacklog", true);
     }
 
     public String getQueryString(String contentEncoding) {
@@ -561,6 +563,9 @@ public class WebSocketSampler extends AbstractSampler implements TestStateListen
         for (ServiceSocket socket : connectionList.values()) {
             socket.close();
         }
+//        if(!executor.isTerminated()) {
+//            executor.shutdownNow();
+//        }
     }
 
     @Override
