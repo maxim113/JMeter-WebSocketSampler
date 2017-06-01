@@ -61,7 +61,7 @@ public class WebSocketSampler extends AbstractSampler implements TestStateListen
     private static final String DEFAULT_PROTOCOL = "ws";
 
     private static Map<String, ServiceSocket> connectionList;
-    private static ExecutorService executor = Executors.newCachedThreadPool();
+    private ExecutorService executor;
 
     private HeaderManager headerManager;
     private CookieManager cookieManager;
@@ -545,7 +545,9 @@ public class WebSocketSampler extends AbstractSampler implements TestStateListen
 
     @Override
     public void testStarted() {
+        executor = Executors.newCachedThreadPool();
         testStarted("unknown");
+
     }
 
     @Override
@@ -563,9 +565,10 @@ public class WebSocketSampler extends AbstractSampler implements TestStateListen
         for (ServiceSocket socket : connectionList.values()) {
             socket.close();
         }
-//        if(!executor.isTerminated()) {
-//            executor.shutdownNow();
-//        }
+
+        if(!executor.isTerminated()) {
+            executor.shutdownNow();
+        }
     }
 
     @Override
